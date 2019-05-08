@@ -6,6 +6,12 @@ plugins {
     id "com.jetbrains.python.envs" version "0.0.26"
 }
 
+/* Cliqz start */
+plugins {
+    id "de.undercouch.download" version "3.4.3"
+}
+/* Cliqz stop */
+
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-android-extensions'
@@ -89,6 +95,10 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    packagingOptions {
+        exclude 'META-INF/atomicfu.kotlin_module'
     }
 }
 
@@ -175,6 +185,7 @@ dependencies {
     implementation Deps.mozilla_browser_menu
     implementation Deps.mozilla_browser_session
     implementation Deps.mozilla_browser_storage_sync
+    implementation Deps.mozilla_browser_icons
 
     implementation Deps.mozilla_feature_accounts
     implementation Deps.mozilla_feature_awesomebar
@@ -191,6 +202,7 @@ dependencies {
     implementation Deps.mozilla_feature_downloads
     implementation Deps.mozilla_feature_prompts
     implementation Deps.mozilla_feature_qr
+    implementation Deps.mozilla_feature_readerview
 
     implementation Deps.mozilla_ui_autocomplete
     implementation Deps.mozilla_ui_colors
@@ -215,7 +227,7 @@ dependencies {
     implementation Deps.androidx_appcompat
     implementation Deps.androidx_constraintlayout
     implementation Deps.androidx_preference
-    implementation Deps.arch_workmanager
+    implementation Deps.androidx_work_runtime
     implementation Deps.google_material
 
     androidTestImplementation Deps.uiautomator
@@ -259,10 +271,18 @@ task printBuildVariants {
     }
 }
 
+task printGeckoviewVersions {
+    doLast {
+        println "nightly: " + groovy.json.JsonOutput.toJson(GeckoVersions.nightly_version)
+    }
+}
+
 // Normally this should use the same version as the dependency. But since we are using snapshots we can't reference a
 // git tag. So we are just using "master" and hoping for the best.
 apply from: 'https://github.com/mozilla-mobile/android-components/raw/master/components/service/glean/scripts/sdk_generator.gradle'
 
 /* Cliqz start */
 apply from: '../cliqzSearch/cliqzSearch.gradle'
-/* Cliqz end */
+apply from: './cliqz.gradle'
+/* Cliqz stop */
+

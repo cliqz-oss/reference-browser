@@ -9,14 +9,16 @@ Decision task
 from __future__ import print_function
 
 import argparse
+import arrow
 import os
 import taskcluster
 
-from lib import build_variants
+from lib.gradle import get_build_variants, get_geckoview_versions
 from lib.tasks import (
     TaskBuilder,
     schedule_task_graph,
     get_architecture_and_build_type_and_product_from_variant,
+    fetch_mozharness_task_id,
 )
 from lib.chain_of_trust import (
     populate_chain_of_trust_task_graph,
@@ -53,13 +55,10 @@ def pr_or_push(is_push=False):
         print("Exit")
         return {}
 
-    print("Fetching build variants from gradle")
-    variants = build_variants.from_gradle()
-
-    if len(variants) == 0:
-        raise ValueError("Could not get build variants from gradle")
-
-    print("Got variants: {}".format(' '.join(variants)))
+    variants = get_build_variants()
+    geckoview_nightly_version = get_geckoview_versions()
+    mozharness_task_id = fetch_mozharness_task_id(geckoview_nightly_version)
+    gecko_revision = taskcluster.Queue().task(mozharness_task_id)['payload']['env']['GECKO_HEAD_REV']
 
     build_tasks = {}
     signing_tasks = {}
@@ -68,19 +67,33 @@ def pr_or_push(is_push=False):
     for variant in variants:
         assemble_task_id = taskcluster.slugId()
         build_tasks[assemble_task_id] = BUILDER.craft_assemble_task(variant)
+        build_tasks[taskcluster.slugId()] = BUILDER.craft_test_task(variant)
         architecture, build_type, _ = get_architecture_and_build_type_and_product_from_variant(
             variant
         )
-
         if (
             is_push and
             architecture in ('aarch64', 'arm') and
             build_type == 'releaseRaptor' and
             SHORT_HEAD_BRANCH == 'master'
         ):
-            signing_tasks[taskcluster.slugId()] = BUILDER.craft_signing_task(assemble_task_id, variant)
+            signing_task_id = taskcluster.slugId()
+            signing_tasks[signing_task_id] = BUILDER.craft_master_commit_signing_task(assemble_task_id, variant)
 
-        build_tasks[taskcluster.slugId()] = BUILDER.craft_test_task(variant)
+            ALL_RAPTOR_CRAFT_FUNCTIONS = [
+                BUILDER.craft_raptor_tp6m_task(for_suite=i)
+                for i in range(1, 11)
+            ] + [
+                BUILDER.craft_raptor_speedometer_task,
+                BUILDER.craft_raptor_speedometer_power_task,
+            ]
+
+            for craft_function in ALL_RAPTOR_CRAFT_FUNCTIONS:
+                args = (signing_task_id, mozharness_task_id, variant, gecko_revision)
+                other_tasks[taskcluster.slugId()] = craft_function(*args)
+                # we also want the arm APK to be tested on 64-bit-devices
+                if architecture == 'arm':
+                    other_tasks[taskcluster.slugId()] = craft_function(*args, force_run_on_64_bit_device=True)
 
     for craft_function in (
         BUILDER.craft_detekt_task,
@@ -103,9 +116,8 @@ def nightly(is_staging):
     build_tasks[assemble_task_id] = BUILDER.craft_assemble_release_task(is_staging)
 
     signing_task_id = taskcluster.slugId()
-    signing_tasks[signing_task_id] = BUILDER.craft_signing_task(
-        assemble_task_id,
-        is_staging=is_staging
+    signing_tasks[signing_task_id] = BUILDER.craft_nightly_signing_task(
+        assemble_task_id, is_staging=is_staging
     )
 
     push_task_id = taskcluster.slugId()
