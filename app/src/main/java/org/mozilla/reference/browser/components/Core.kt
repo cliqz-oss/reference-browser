@@ -13,7 +13,6 @@ import mozilla.components.browser.storage.sync.PlacesHistoryStorage
 import mozilla.components.concept.engine.DefaultSettings
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy
-import mozilla.components.concept.engine.webextension.WebExtension
 import mozilla.components.concept.fetch.Client
 import mozilla.components.feature.session.HistoryDelegate
 import org.mozilla.reference.browser.AppRequestInterceptor
@@ -26,7 +25,8 @@ import org.mozilla.reference.browser.R.string.pref_key_tracking_protection_priva
 import java.util.concurrent.TimeUnit
 import org.mozilla.reference.browser.BuildConfig
 
-val addonId = BuildConfig.PRIVACY_ADDON_ID
+const val addonId = BuildConfig.PRIVACY_ADDON_ID
+const val reconsentId = "gdprtool@cliqz.com"
 
 /**
  * Component group for all core browser functionality.
@@ -44,10 +44,11 @@ class Core(private val context: Context) {
             remoteDebuggingEnabled = prefs.getBoolean(context.getPreferenceKey(pref_key_remote_debugging), false),
             testingModeEnabled = prefs.getBoolean(context.getPreferenceKey(R.string.pref_key_testing_mode), false),
             trackingProtectionPolicy = createTrackingProtectionPolicy(prefs),
-            historyTrackingDelegate = HistoryDelegate(historyStorage)
+            historyTrackingDelegate = HistoryDelegate(historyStorage),
+            allowAutoplayMedia = false
         )
         val engine = EngineProvider.createEngine(context, defaultSettings)
-        engine.installWebExtension(WebExtension(addonId, "resource://android/assets/addons/$addonId/"))
+        engine.installWebExtension(addonId, "resource://android/assets/addons/$addonId/", true)
         engine
     }
 
@@ -100,11 +101,8 @@ class Core(private val context: Context) {
         privateMode: Boolean = prefs.getBoolean(context.getPreferenceKey(pref_key_tracking_protection_private), true)
     ): TrackingProtectionPolicy {
 
-        return when {
-            normalMode && privateMode -> TrackingProtectionPolicy.all()
-            normalMode && !privateMode -> TrackingProtectionPolicy.all().forRegularSessionsOnly()
-            !normalMode && privateMode -> TrackingProtectionPolicy.all().forPrivateSessionsOnly()
-            else -> TrackingProtectionPolicy.none()
-        }
+        return TrackingProtectionPolicy.select(TrackingProtectionPolicy.ANALYTICS,
+                TrackingProtectionPolicy.CRYPTOMINING,
+                TrackingProtectionPolicy.FINGERPRINTING)
     }
 }
